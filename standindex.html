@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Standalone DNS Phishing Analyzer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;600&family=Inter:wght@300;400;600&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a; /* Slate 900 */
+            color: #e2e8f0; /* Slate 200 */
+        }
+        .font-mono { font-family: 'Fira Code', monospace; }
+        
+        .cyber-panel {
+            background: rgba(30, 41, 59, 0.7); /* Slate 800 */
+            border: 1px solid #334155; /* Slate 700 */
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+        }
+
+        .scan-line {
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(to right, transparent, #06b6d4, transparent);
+            animation: scan 2s linear infinite;
+            display: none;
+        }
+
+        @keyframes scan {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .pulse-text { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+
+        /* Scrollbar styling for code blocks */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+
+    <div class="max-w-6xl mx-auto space-y-6">
+        
+        <!-- Header -->
+        <header class="mb-8">
+            <h1 class="text-3xl font-bold text-cyan-400 tracking-tight flex items-center gap-3">
+                <span class="text-4xl">🛡️</span> Client-Side DNS Threat Analyzer
+            </h1>
+            <p class="text-slate-400 mt-2">Serverless Heuristic & Infrastructure Profiling via DNS-over-HTTPS</p>
+        </header>
+
+        <!-- Input Section -->
+        <section class="cyber-panel p-6">
+            <form id="analyzeForm" class="flex flex-col md:flex-row gap-4">
+                <div class="flex-grow">
+                    <label class="block text-xs font-mono text-cyan-500 mb-1">TARGET_DOMAIN</label>
+                    <input type="text" id="targetDomain" required placeholder="e.g., secure-login-portal-update.com" 
+                        class="w-full bg-slate-900 border border-slate-600 rounded p-3 text-white font-mono focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 transition-colors">
+                </div>
+                <div class="flex items-end">
+                    <button type="submit" id="scanBtn" class="w-full md:w-auto bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-3 px-8 rounded transition-colors border border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.3)] hover:shadow-[0_0_25px_rgba(6,182,212,0.5)]">
+                        INITIATE SCAN
+                    </button>
+                </div>
+            </form>
+            <div id="scanLine" class="scan-line mt-6"></div>
+            <div id="statusText" class="text-xs font-mono text-cyan-400 mt-2 h-4 pulse-text hidden">Establishing secure DoH connection...</div>
+        </section>
+
+        <!-- Results Dashboard (Hidden by default) -->
+        <div id="resultsDashboard" class="hidden grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- Left Column: Metrics & Indicators -->
+            <div class="space-y-6 lg:col-span-1">
+                
+                <!-- Risk Score Card -->
+                <div class="cyber-panel p-6 flex flex-col items-center justify-center text-center">
+                    <h2 class="text-sm font-mono text-slate-400 mb-2">THREAT SEVERITY SCORE</h2>
+                    <div class="relative w-32 h-32 flex items-center justify-center rounded-full border-4" id="scoreRing">
+                        <span id="riskScore" class="text-4xl font-bold">0</span>
+                    </div>
+                    <div id="severityLabel" class="mt-4 font-bold text-lg tracking-widest">UNKNOWN</div>
+                </div>
+
+                <!-- Structural Indicators -->
+                <div class="cyber-panel p-6">
+                    <h2 class="text-sm font-mono text-cyan-400 mb-4 border-b border-slate-700 pb-2">LEXICAL HEURISTICS</h2>
+                    <ul id="lexicalList" class="space-y-3 font-mono text-sm">
+                        <!-- Populated by JS -->
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Middle Column: Infrastructure -->
+            <div class="cyber-panel p-6 lg:col-span-1 flex flex-col">
+                <h2 class="text-sm font-mono text-cyan-400 mb-4 border-b border-slate-700 pb-2">INFRASTRUCTURE FOOTPRINT</h2>
+                
+                <div class="space-y-4 flex-grow font-mono text-sm">
+                    <div>
+                        <span class="text-slate-500 block mb-1">A RECORDS (IPv4)</span>
+                        <div id="aRecords" class="bg-slate-900 p-2 rounded border border-slate-700 break-all text-slate-300">Scanning...</div>
+                    </div>
+                    
+                    <div>
+                        <span class="text-slate-500 block mb-1">MX RECORDS (Mail)</span>
+                        <div id="mxRecords" class="bg-slate-900 p-2 rounded border border-slate-700 break-all text-slate-300">Scanning...</div>
+                    </div>
+                    
+                    <div>
+                        <span class="text-slate-500 block mb-1">SPF CONFIGURATION</span>
+                        <div id="spfRecord" class="bg-slate-900 p-2 rounded border border-slate-700 break-all text-slate-300">Scanning...</div>
+                    </div>
+
+                    <div>
+                        <span class="text-slate-500 block mb-1">DMARC POLICY</span>
+                        <div id="dmarcRecord" class="bg-slate-900 p-2 rounded border border-slate-700 break-all text-slate-300">Scanning...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: AI Appraisal -->
+            <div class="cyber-panel p-6 lg:col-span-1 flex flex-col">
+                <h2 class="text-sm font-mono text-amber-400 mb-4 border-b border-slate-700 pb-2 flex items-center justify-between">
+                    <span>STRATEGIC APPRAISAL</span>
+                    <span class="text-xs bg-amber-900/50 text-amber-400 px-2 py-1 rounded">GEMMA 3 PRO (SIM)</span>
+                </h2>
+                <div class="bg-slate-900 rounded border border-slate-700 p-4 flex-grow overflow-y-auto font-mono text-sm text-slate-300 shadow-inner" id="aiOutput">
+                    Awaiting scan execution...
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const DOH_ENDPOINT = "https://dns.google/resolve";
+        const PHISHING_KEYWORDS = ['login', 'verify', 'secure', 'signin', 'update', 'banking', 'support', 'account', 'auth', 'billing', 'admin', 'service'];
+        
+        // DNS Record Types mapping
+        const DNS_TYPES = { A: 1, MX: 15, TXT: 16, DNSKEY: 48 };
+
+        // UI Elements
+        const form = document.getElementById('analyzeForm');
+        const targetInput = document.getElementById('targetDomain');
+        const scanBtn = document.getElementById('scanBtn');
+        const scanLine = document.getElementById('scanLine');
+        const statusText = document.getElementById('statusText');
+        const resultsDashboard = document.getElementById('resultsDashboard');
+
+        // Execute Scan
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            // Clean input
+            let domain = targetInput.value.trim().toLowerCase();
+            domain = domain.replace(/^https?:\/\//, '').split('/')[0];
+            targetInput.value = domain;
+
+            if(!domain || !domain.includes('.')) {
+                alert("Please enter a valid domain (e.g., example.com)");
+                return;
+            }
+
+            // UI Loading State
+            scanBtn.disabled = true;
+            scanBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            scanLine.style.display = 'block';
+            statusText.classList.remove('hidden');
+            resultsDashboard.classList.remove('hidden');
+            
+            // Reset UI
+            document.getElementById('aiOutput').innerHTML = '<span class="pulse-text text-cyan-400">Aggregating telemetry...</span>';
+            resetDash();
+
+            try {
+                // 1. Run Lexical Analysis
+                statusText.innerText = "Running structural lexical analysis...";
+                const lexical = analyzeLexical(domain);
+
+                // 2. Fetch DNS Infrastructure
+                statusText.innerText = "Querying A records via DoH...";
+                const aRecords = await fetchDnsRecord(domain, DNS_TYPES.A);
+                
+                statusText.innerText = "Mapping Mail Exchange (MX) topology...";
+                const mxRecords = await fetchDnsRecord(domain, DNS_TYPES.MX);
+                
+                statusText.innerText = "Validating anti-spoofing policies (TXT)...";
+                const txtRecords = await fetchDnsRecord(domain, DNS_TYPES.TXT);
+                const dmarcRecords = await fetchDnsRecord(`_dmarc.${domain}`, DNS_TYPES.TXT);
+
+                // Process Infrastructure
+                const infra = {
+                    A: extractData(aRecords),
+                    MX: extractData(mxRecords, true), // Clean MX priorities
+                    TXT: extractData(txtRecords),
+                    DMARC: extractData(dmarcRecords)
+                };
+
+                // Extract Specific Security Policies
+                const spf = infra.TXT.find(r => r.includes('v=spf1')) || "None Found";
+                const dmarc = infra.DMARC.find(r => r.includes('v=DMARC1')) || "None Found";
+
+                // 3. Score Risk
+                statusText.innerText = "Calculating probabilistic risk score...";
+                const analysis = evaluateRisk(lexical, infra, spf);
+
+                // 4. Update Dashboard UI
+                renderDashboard(analysis, lexical, infra, spf, dmarc);
+
+                // 5. Simulate AI Appraisal
+                statusText.innerText = "Generating strategic appraisal...";
+                generateAIReport(domain, analysis, lexical, infra, spf, dmarc);
+
+            } catch (err) {
+                console.error(err);
+                alert("Analysis failed. Please check your network connection.");
+            } finally {
+                // Reset Loading State
+                scanBtn.disabled = false;
+                scanBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                scanLine.style.display = 'none';
+                statusText.classList.add('hidden');
+            }
+        });
+
+        // --- CORE LOGIC FUNCTIONS ---
+
+        function analyzeLexical(domain) {
+            const parts = domain.split('.');
+            const base = parts.slice(0, -1).join('.');
+            const matchedKeywords = PHISHING_KEYWORDS.filter(kw => domain.includes(kw));
+            
+            return {
+                isPunycode: domain.startsWith('xn--'),
+                keywords: matchedKeywords,
+                hyphens: (base.match(/-/g) || []).length,
+                subdomains: parts.length > 2 ? parts.length - 2 : 0
+            };
+        }
+
+        async function fetchDnsRecord(name, type) {
+            try {
+                const response = await fetch(`${DOH_ENDPOINT}?name=${encodeURIComponent(name)}&type=${type}`, {
+                    headers: { 'Accept': 'application/dns-json' }
+                });
+                if (!response.ok) throw new Error('DoH request failed');
+                return await response.json();
+            } catch (e) {
+                console.error(`DNS Fetch Error for ${name} (${type}):`, e);
+                return { Answer: [] };
+            }
+        }
+
+        function extractData(dnsResponse, isMx = false) {
+            if (!dnsResponse || !dnsResponse.Answer || dnsResponse.Answer.length === 0) return [];
+            return dnsResponse.Answer.map(ans => {
+                let data = ans.data;
+                // Clean up string formatting often returned by DNS APIs
+                if (data.startsWith('"') && data.endsWith('"')) data = data.slice(1, -1);
+                // Clean MX priorities if specified
+                if (isMx) data = data.replace(/^\d+\s+/, ''); 
+                return data;
+            });
+        }
+
+        function evaluateRisk(lexical, infra, spf) {
+            let score = 0;
+            let triggers = [];
+
+            if (lexical.isPunycode) {
+                score += 40;
+                triggers.push("Punycode detected (Homograph attack risk)");
+            }
+            if (lexical.keywords.length > 0) {
+                score += (lexical.keywords.length * 20);
+                triggers.push(`High-trust keywords: ${lexical.keywords.join(', ')}`);
+            }
+            if (lexical.hyphens >= 2) {
+                score += 15;
+                triggers.push("High hyphenation indicates structural obfuscation");
+            }
+            if (lexical.subdomains > 0) {
+                score += 10;
+                triggers.push("Subdomain nesting detected");
+            }
+            if (infra.MX.length > 0 && spf === "None Found") {
+                score += 30;
+                triggers.push("Active Mail Exchange lacks SPF (High spoofing threat)");
+            }
+            if (infra.A.length === 0) {
+                triggers.push("No IPv4 resolution (Parked/Staging)");
+            }
+
+            score = Math.min(score, 100);
+            
+            let severity = "LOW";
+            let color = "text-green-400";
+            let ringClass = "border-green-500 text-green-500 shadow-[0_0_15px_rgba(34,197,94,0.4)]";
+
+            if (score >= 60) {
+                severity = "CRITICAL";
+                color = "text-red-500";
+                ringClass = "border-red-500 text-red-500 shadow-[0_0_20px_rgba(239,68,68,0.6)]";
+            } else if (score >= 30) {
+                severity = "MODERATE";
+                color = "text-amber-400";
+                ringClass = "border-amber-400 text-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.4)]";
+            }
+
+            return { score, severity, color, ringClass, triggers };
+        }
+
+        // --- RENDER FUNCTIONS ---
+
+        function renderDashboard(analysis, lexical, infra, spf, dmarc) {
+            // Render Score
+            document.getElementById('riskScore').innerText = analysis.score;
+            document.getElementById('severityLabel').innerText = analysis.severity;
+            document.getElementById('severityLabel').className = `mt-4 font-bold text-lg tracking-widest ${analysis.color}`;
+            document.getElementById('scoreRing').className = `relative w-32 h-32 flex items-center justify-center rounded-full border-4 ${analysis.ringClass}`;
+
+            // Render Lexical
+            const lexList = document.getElementById('lexicalList');
+            lexList.innerHTML = '';
+            
+            const addLexItem = (label, val, isBad) => {
+                const icon = isBad ? '<span class="text-red-400 mr-2">[!]</span>' : '<span class="text-slate-500 mr-2">[-]</span>';
+                const textColor = isBad ? 'text-slate-200' : 'text-slate-400';
+                lexList.innerHTML += `<li class="${textColor} flex items-start">${icon} <span>${label}: <strong class="${isBad ? 'text-red-400': 'text-white'}">${val}</strong></span></li>`;
+            };
+
+            addLexItem("Keywords", lexical.keywords.length > 0 ? lexical.keywords.join(', ') : 'None', lexical.keywords.length > 0);
+            addLexItem("Hyphen Count", lexical.hyphens, lexical.hyphens >= 2);
+            addLexItem("Punycode", lexical.isPunycode ? 'True' : 'False', lexical.isPunycode);
+            addLexItem("Subdomains", lexical.subdomains, lexical.subdomains > 0);
+
+            // Render Infra
+            const renderDataBox = (id, arr, emptyMsg, formatCode = true) => {
+                const el = document.getElementById(id);
+                if (!arr || arr.length === 0 || arr === "None Found") {
+                    el.innerHTML = `<span class="text-slate-500 italic">${emptyMsg}</span>`;
+                } else if (Array.isArray(arr)) {
+                    el.innerHTML = arr.map(a => formatCode ? `<code>${a}</code>` : a).join('<br>');
+                } else {
+                    el.innerHTML = formatCode ? `<code>${arr}</code>` : arr;
+                }
+            };
+
+            renderDataBox('aRecords', infra.A, 'No IPv4 Records Found');
+            renderDataBox('mxRecords', infra.MX, 'No Mail Exchange Active');
+            renderDataBox('spfRecord', spf, 'None Found (Spoofing Possible)', spf !== 'None Found');
+            renderDataBox('dmarcRecord', dmarc, 'None Found', dmarc !== 'None Found');
+        }
+
+        function generateAIReport(domain, analysis, lexical, infra, spf, dmarc) {
+            const aiOutput = document.getElementById('aiOutput');
+            aiOutput.innerHTML = '';
+
+            let report = `<div class="mb-3"><strong class="${analysis.color}">THREAT LEVEL: ${analysis.severity} (${analysis.score}/100)</strong></div>`;
+            report += `<div class="mb-3 text-slate-300"><strong>Analysis of <span class="text-cyan-300">${domain}</span>:</strong></div>`;
+
+            if (analysis.score >= 60) {
+                report += `<p class="mb-3">This domain exhibits strong characteristics of malicious staging infrastructure or active phishing.</p>`;
+            } else if (analysis.score >= 30) {
+                report += `<p class="mb-3">This domain shows structural anomalies that warrant manual investigation, though immediate active threat indicators are mixed.</p>`;
+            } else {
+                report += `<p class="mb-3">Intrinsic indicators suggest a benign or nominal infrastructure footprint.</p>`;
+            }
+
+            if (analysis.triggers.length > 0) {
+                report += `<div class="mb-2 mt-4"><strong class="text-amber-400">Identified Vulnerabilities & Tactics:</strong></div><ul class="list-disc pl-5 space-y-1 mb-4 text-slate-400">`;
+                analysis.triggers.forEach(t => {
+                    report += `<li>${t}</li>`;
+                });
+                report += `</ul>`;
+            }
+
+            report += `<div class="mb-2 mt-4"><strong class="text-cyan-400">Strategic Recommendations:</strong></div>`;
+            report += `<ul class="list-none space-y-2">`;
+            
+            if (analysis.score >= 60) {
+                if (infra.A.length > 0) {
+                    report += `<li><span class="text-red-400">[BLOCK]</span> Implement sinkhole routing for resolved IP(s): <code>${infra.A[0]}</code></li>`;
+                }
+                report += `<li><span class="text-red-400">[BLOCK]</span> Add <code>*.${domain}</code> to Secure Web Gateway deny lists.</li>`;
+            }
+            if (infra.MX.length > 0 && spf === "None Found") {
+                report += `<li><span class="text-amber-400">[MITIGATE]</span> Domain configured to send mail without SPF. Configure mail gateways to strictly reject incoming mail purporting to be from this apex.</li>`;
+            }
+            if (analysis.score < 60) {
+                report += `<li><span class="text-green-400">[MONITOR]</span> Standard log aggregation. No immediate blocking required based on pure structural heuristics.</li>`;
+            }
+            report += `</ul>`;
+
+            aiOutput.innerHTML = report;
+        }
+
+        function resetDash() {
+            document.getElementById('aRecords').innerHTML = 'Scanning...';
+            document.getElementById('mxRecords').innerHTML = 'Scanning...';
+            document.getElementById('spfRecord').innerHTML = 'Scanning...';
+            document.getElementById('dmarcRecord').innerHTML = 'Scanning...';
+            document.getElementById('lexicalList').innerHTML = '';
+            document.getElementById('scoreRing').className = "relative w-32 h-32 flex items-center justify-center rounded-full border-4 border-slate-700 text-slate-500";
+            document.getElementById('riskScore').innerText = '0';
+            document.getElementById('severityLabel').innerText = 'SCANNING';
+            document.getElementById('severityLabel').className = "mt-4 font-bold text-lg tracking-widest text-slate-500";
+        }
+
+    </script>
+</body>
+</html>
